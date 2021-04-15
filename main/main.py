@@ -3,20 +3,21 @@ from analysis import threshold, expression_analysis
 import pandas as pd
 
 data_dir = '../data/'
+
 expgroup = pd.read_csv(data_dir + 'expgroup.csv', sep=';', index_col='id_sample')
 data = pd.read_csv(data_dir + 'data.csv', sep=';', index_col='id_sample')
 
 print('Data', data.shape)
 print(data.head())
 
-consistency = DataConsistency().calculate_consistency_stats(data, expgroup)
-print('\nConsistency check')
-print(consistency)
-
 expgroup_normal = expgroup[expgroup['group']=='normal']
 expgroup_tumoral = expgroup[expgroup['group']=='tumoral']
 normal = data.loc[expgroup_normal.index, :]
 tumoral = data.loc[expgroup_tumoral.index, :]
+
+consistency = DataConsistency().calculate_consistency_stats(tumoral, expgroup_tumoral)
+print('\nConsistency check')
+print(consistency)
 
 mean_threshold = threshold.MeanThreshold().calculate_threshold(normal)
 print('\nmean threshold')

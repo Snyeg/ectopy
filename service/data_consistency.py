@@ -18,7 +18,7 @@ class DataConsistency:
         
         return data, expgroup
 
-    def calculate_consistency_stats(self, data: pd.DataFrame, expgroup: pd.DataFrame):
+    def calculate_consistency_stats(self, data: pd.DataFrame, expgroup: pd.DataFrame) -> dict:
         stats = dict()
         common_samples = list(set(expgroup.index).intersection(set(data.index)))
         stats['expgroup'] = dict() 
