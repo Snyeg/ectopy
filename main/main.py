@@ -19,13 +19,9 @@ consistency = DataConsistency().calculate_consistency_stats(tumoral, expgroup_tu
 print('\nConsistency check')
 print(consistency)
 
-mean_threshold = threshold.MeanThreshold().calculate_threshold(normal)
-print('\nmean threshold')
-print(mean_threshold)
-
-m2sd_threshold = threshold.MeanNStdThreshold().calculate_threshold(normal, n_std=2)
-print('\nm2sd threshold')
+m2sd_threshold = threshold.StdDecorator(threshold.MeanTreshold(normal), nb_std=2).calculate_threshold()
 print(m2sd_threshold)
+
 
 frequency = expression_analysis.ExpressionFrequency().calculate_expression_frequency(tumoral, m2sd_threshold)
 print('\nActivation frequency obtained with m2sd threshold in percentage')
