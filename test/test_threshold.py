@@ -19,6 +19,10 @@ print(tumoral.head(3))
 normal = pd.DataFrame(index=normal_samples, columns=['G1', 'G2'])
 normal['G1'] = np.random.normal(0.9, 0.5, size=(N, 1))
 normal['G2'] = np.random.normal(1.1, 0.5, size=(N, 1))
+
+normal['G1'] = np.random.normal(10, 0.5, size=(N, 1))
+
+
 print('normal', normal.shape)
 print(normal.head(3))
 
@@ -56,3 +60,16 @@ print(min_adaptive)
 max_adaptive = adaptive_threshold.calulate_max_threshold()
 print('\nmax_adaptive')
 print(max_adaptive)
+
+'''thresholds = pd.concat([min_adaptive, max_adaptive], axis=1)
+thresholds.columns = ['min_adaptive', 'max_adaptive']
+
+for index, row in thresholds.iterrows():
+    if row.min_adaptive > row.max_adaptive:
+        row[:] = None'''
+
+thresholds = adaptive_threshold.check_consistensy()
+print(thresholds)
+
+thresholds = adaptive_threshold.list_thresholds(2)
+print(thresholds)

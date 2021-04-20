@@ -153,3 +153,16 @@ class AdaptiveThreshold(Threshold):
             list_thresholds.append(NSampleThreshold(self.data, self._min_nb_samples).calculate_threshold(ascending=False))
         return pd.concat(list_thresholds, axis=1).min(axis=1)
         
+    
+    def check_consistensy(self):
+        min_threshold = self.calulate_min_threshold()
+        max_threshold = self.calulate_max_threshold()
+        thresholds = pd.concat([min_threshold, max_threshold], axis=1)
+        thresholds.columns = ['min_threshold', 'max_threshold']
+        
+        for index, row in thresholds.iterrows():
+            if row.min_threshold > row.max_threshold:
+                row[:] = None
+                
+        return thresholds
+    
