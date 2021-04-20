@@ -21,6 +21,16 @@ class Threshold:
     
     def calculate_threshold(self) -> pd.Series:
         pass
+    
+    def get_threshold_percentile(self, expression_values: pd.Series, threshold: float) -> float:
+        values = expression_values.sort_values().to_numpy()
+        if (len(values)==0.0):
+            return 0.0
+        n = 0
+        for i in range(len(values)):
+            if (values[i]<=threshold):
+                n = n + 1
+        return 100.0 * n / len(values)
 
 
 class MeanTreshold(Threshold):
@@ -122,16 +132,38 @@ class AdaptiveThreshold(Threshold):
     
     _noise_level: float
     _percentile: float
+    _step_percentile: float
     _min_nb_samples: int
     _min_reference_threshold: pd.Series
     
+    _min_threshold: pd.Series
+    _max_threshold: pd.Series
+    
+    _dict_thresholds: dict # {'gene' : {'thresholds': [], 'threshold_percentiles': [] }} 
+    
     def __init__(self, data: pd.DataFrame, noise_level: float = 0.3, percentile: float = 15.0, 
-                 min_nb_samples: int = 20, min_reference_threshold: pd.Series = None):
+                 step_percentile: float = 1.0, min_nb_samples: int = 20, min_reference_threshold: pd.Series = None):
         super().__init__(data)
         self._noise_level = noise_level
         self._percentile = percentile
+        self._step_percentile = step_percentile
         self._min_nb_samples = min_nb_samples
         self._min_reference_threshold = min_reference_threshold
+        self.calulate_min_threshold()
+        self.calulate_max_threshold()
+        self._dict_thresholds = dict()
+        
+    @property
+    def min_threshold(self) -> pd.Series:
+        return self._min_threshold
+    
+    @property
+    def max_threshold(self) -> pd.Series:
+        return self._max_threshold
+    
+    @property
+    def dict_thresholds(self) -> dict:
+        return self._dict_thresholds
         
     def calulate_min_threshold(self):
         list_thresholds = []
@@ -143,7 +175,8 @@ class AdaptiveThreshold(Threshold):
             list_thresholds.append(NoiseThreshold(self.data, self._noise_level).calculate_threshold())
         if self._min_reference_threshold is not None:
             list_thresholds.append(self._min_reference_threshold)
-        return pd.concat(list_thresholds, axis=1).max(axis=1)
+        self._min_threshold = pd.concat(list_thresholds, axis=1).max(axis=1)
+
 
     def calulate_max_threshold(self):
         list_thresholds = []
@@ -151,18 +184,25 @@ class AdaptiveThreshold(Threshold):
             list_thresholds.append(PercentileThreshold(self.data, 100.0-self._percentile).calculate_threshold())
         if self._min_nb_samples is not None:
             list_thresholds.append(NSampleThreshold(self.data, self._min_nb_samples).calculate_threshold(ascending=False))
-        return pd.concat(list_thresholds, axis=1).min(axis=1)
+        self._max_threshold = pd.concat(list_thresholds, axis=1).min(axis=1)
         
     
-    def check_consistensy(self):
-        min_threshold = self.calulate_min_threshold()
-        max_threshold = self.calulate_max_threshold()
-        thresholds = pd.concat([min_threshold, max_threshold], axis=1)
-        thresholds.columns = ['min_threshold', 'max_threshold']
-        
-        for index, row in thresholds.iterrows():
-            if row.min_threshold > row.max_threshold:
-                row[:] = None
-                
-        return thresholds
+    def define_eligible_features(self) -> list:
+        eligible_features = self._max_threshold>=self._min_threshold
+        return list(eligible_features[eligible_features].index)
     
+    def generate_thresholds(self):
+        features = self.define_eligible_features()
+        for feature in features:
+            min_percentile = self.get_threshold_percentile(self.data[feature], self.min_threshold[feature])
+            max_percentile = self.get_threshold_percentile(self.data[feature], self.max_threshold[feature])
+            threshold_percentiles = np.arange(min_percentile, max_percentile + self._step_percentile, self._step_percentile)
+            thresholds = np.array([np.percentile(self.data[feature], p) for p in threshold_percentiles])
+            self._dict_thresholds[feature] = dict()
+            self._dict_thresholds[feature]['thresholds'] = thresholds
+            self._dict_thresholds[feature]['threshold_percentiles'] = threshold_percentiles
+    
+    def calculate_threshold(self) -> pd.Series:
+        adaptive_threshold = pd.Series(index=self.data.columns, dtype=float)
+        return adaptive_threshold
+        
