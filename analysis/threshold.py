@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
-
-
-
+from lifelines import CoxPHFitter
 
 
 # === Thresholds ===
@@ -121,7 +119,7 @@ class StdDecorator(ThresholdDecorator):
         return self._nb_std
     
     def calculate_threshold(self) -> pd.Series:
-        return self.threshold.data.mean() + self.nb_std * self.threshold.data.std()
+        return self.threshold.calculate_threshold() + self.nb_std * self.threshold.data.std()
 
 
 
@@ -129,6 +127,10 @@ class StdDecorator(ThresholdDecorator):
 # === Adaptive threshold ===
 
 class AdaptiveThreshold(Threshold):
+    
+    _survival_data: pd.DataFrame
+    _duration_col: str
+    _event_col: str
     
     _noise_level: float
     _percentile: float
@@ -139,19 +141,37 @@ class AdaptiveThreshold(Threshold):
     _min_threshold: pd.Series
     _max_threshold: pd.Series
     
-    _dict_thresholds: dict # {'gene' : {'thresholds': [], 'threshold_percentiles': [] }} 
+    _eligible_features: list
+    _dict_thresholds: dict # {'gene' : pd.DataFrame('thresholds', 'threshold_percentiles')} 
     
-    def __init__(self, data: pd.DataFrame, noise_level: float = 0.3, percentile: float = 15.0, 
-                 step_percentile: float = 1.0, min_nb_samples: int = 20, min_reference_threshold: pd.Series = None):
+    def __init__(
+            self, 
+            data: pd.DataFrame,
+            survival_data: pd.DataFrame, 
+            duration_col: str = 'time', 
+            event_col:str = 'event', 
+            noise_level: float = 0.3, 
+            percentile: float = 15.0, 
+            step_percentile: float = 1.0, 
+            min_nb_samples: int = 20, 
+            min_reference_threshold: pd.Series = None
+            ):
+        
         super().__init__(data)
+        self._survival_data = survival_data
+        self._duration_col = duration_col
+        self._event_col = event_col
         self._noise_level = noise_level
         self._percentile = percentile
         self._step_percentile = step_percentile
         self._min_nb_samples = min_nb_samples
         self._min_reference_threshold = min_reference_threshold
+        
+        self._dict_thresholds = dict()
         self.calulate_min_threshold()
         self.calulate_max_threshold()
-        self._dict_thresholds = dict()
+        self.define_eligible_features()
+        
         
     @property
     def min_threshold(self) -> pd.Series:
@@ -160,6 +180,10 @@ class AdaptiveThreshold(Threshold):
     @property
     def max_threshold(self) -> pd.Series:
         return self._max_threshold
+    
+    @property
+    def eligible_features(self) -> dict:
+        return self._eligible_features
     
     @property
     def dict_thresholds(self) -> dict:
@@ -177,7 +201,6 @@ class AdaptiveThreshold(Threshold):
             list_thresholds.append(self._min_reference_threshold)
         self._min_threshold = pd.concat(list_thresholds, axis=1).max(axis=1)
 
-
     def calulate_max_threshold(self):
         list_thresholds = []
         if self._percentile is not None:
@@ -186,21 +209,65 @@ class AdaptiveThreshold(Threshold):
             list_thresholds.append(NSampleThreshold(self.data, self._min_nb_samples).calculate_threshold(ascending=False))
         self._max_threshold = pd.concat(list_thresholds, axis=1).min(axis=1)
         
-    
-    def define_eligible_features(self) -> list:
+    def define_eligible_features(self):
         eligible_features = self._max_threshold>=self._min_threshold
-        return list(eligible_features[eligible_features].index)
+        self._eligible_features = list(eligible_features[eligible_features].index)
     
-    def generate_thresholds(self):
-        features = self.define_eligible_features()
-        for feature in features:
+    def generate_thresholds(self): 
+        for feature in self._eligible_features:
             min_percentile = self.get_threshold_percentile(self.data[feature], self.min_threshold[feature])
             max_percentile = self.get_threshold_percentile(self.data[feature], self.max_threshold[feature])
             threshold_percentiles = np.arange(min_percentile, max_percentile + self._step_percentile, self._step_percentile)
             thresholds = np.array([np.percentile(self.data[feature], p) for p in threshold_percentiles])
-            self._dict_thresholds[feature] = dict()
-            self._dict_thresholds[feature]['thresholds'] = thresholds
-            self._dict_thresholds[feature]['threshold_percentiles'] = threshold_percentiles
+            self._dict_thresholds[feature] = pd.DataFrame()
+            self._dict_thresholds[feature]['threshold'] = thresholds
+            self._dict_thresholds[feature]['threshold_percentile'] = threshold_percentiles
+    
+    def is_threshold_validated(self, pvalue: float, hazard_ratio: float):
+        validated = False
+        if (pvalue<0.05 and hazard_ratio>1.0):
+            validated = True
+        return validated
+    
+    def generate_cox_expression(self, feature) -> pd.DataFrame:
+        cox = pd.DataFrame()
+        cox['feature'] = self.data[feature]
+        cox['time'] = self._survival_data.loc[cox.index, self._duration_col]
+        cox['event'] = self._survival_data.loc[cox.index, self._event_col]
+        return cox[['feature', 'time', 'event']]
+    
+    def generate_cox_group(self, feature, current_threshold):
+        cox = self.generate_cox_expression(feature)
+        cox['group'] = 0
+        cox.loc[cox['feature']>current_threshold, 'group'] = 1
+        return cox[['group', 'time', 'event']]
+    
+    def calculate_cox_model_for_expression(self, feature):
+        cox_expression = self.generate_cox_expression(feature)
+        cph = CoxPHFitter()
+        cph.fit(cox_expression, duration_col='time', event_col='event', show_progress=False)
+        cox_pvalue_expression = cph.summary.p['feature']
+        cox_hr_expression = cph.summary['exp(coef)']['feature']
+        cox_expression_validated = self.is_threshold_validated(cox_pvalue_expression, cox_hr_expression)
+    
+    def calculate_cox_model_for_thresholds(self, feature):
+        pvalues = []
+        hrs = []
+        validated = []
+        for current_threshold in self.dict_thresholds[feature]['threshold']:
+            cox_group = self.generate_cox_group(feature, current_threshold)
+            cph = CoxPHFitter()
+            cph.fit(cox_group, duration_col='time', event_col='event', show_progress=False)
+            cox_pvalue_group = cph.summary.p['group']
+            pvalues.append(cox_pvalue_group)
+            cox_hr_group = cph.summary['exp(coef)']['group']
+            hrs.append(cox_hr_group)
+            cox_group_validated = self.is_threshold_validated(cox_pvalue_group, cox_hr_group)
+            validated.append(cox_group_validated)
+        self._dict_thresholds[feature]['p_value'] = pvalues
+        self._dict_thresholds[feature]['hazard_ratio'] = hrs
+        self._dict_thresholds[feature]['validated'] = validated
+            
     
     def calculate_threshold(self) -> pd.Series:
         adaptive_threshold = pd.Series(index=self.data.columns, dtype=float)

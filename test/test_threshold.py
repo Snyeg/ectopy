@@ -35,6 +35,7 @@ step_percentile = 1.0
 nb_samples = 20
 noise = 0.3
 
+'''
 min_percentile = threshold.PercentileThreshold(tumoral, percentile).calculate_threshold() 
 min_sample = threshold.NSampleThreshold(tumoral, nb_samples).calculate_threshold(ascending=True)
 noise = threshold.NoiseThreshold(tumoral, 0.3).calculate_threshold()
@@ -54,28 +55,20 @@ candidate_max_thresholds.columns = ['max_percentile', 'max_sample']
 candidate_max_thresholds['min'] = candidate_max_thresholds.min(axis=1)
 print('\ncandidate_max_thresholds')
 print(candidate_max_thresholds)
+'''
 
+data = tumoral
+options = {'percentile': percentile, 'min_nb_samples': nb_samples, 'noise_level': noise, 'min_reference_threshold': max_normal}
+adaptive_threshold = threshold.AdaptiveThreshold(data=tumoral, **options)
 
-
-
-adaptive_threshold = threshold.AdaptiveThreshold(data=tumoral, percentile=percentile, min_nb_samples=nb_samples, noise_level=noise, min_reference_threshold=max_normal)
-min_adaptive = adaptive_threshold.min_threshold
-print('\nmin_adaptive')
-print(min_adaptive)
-
-max_adaptive = adaptive_threshold.max_threshold
-print('\nmax_adaptive')
-print(max_adaptive)
 
 eligible_features =  adaptive_threshold.define_eligible_features()
 print('\neligible_features', eligible_features)
-
-data = tumoral
  
 adaptive_threshold.generate_thresholds()
 print(adaptive_threshold.dict_thresholds)
 
-    
-'''
-print(adaptive_threshold.calculate_threshold())
-'''
+feature = 'G1'
+current_threshold = 3.52485183
+
+up = data[data[feature]>current_threshold][feature]
