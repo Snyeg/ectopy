@@ -1,6 +1,7 @@
 from analysis import threshold
 import pandas as pd
 from lifelines import CoxPHFitter
+from sklearn.model_selection import StratifiedKFold
 
 data_dir = '../data/'
 
@@ -34,9 +35,15 @@ print('\nProcessing feature', feature, ' please wait...')
 adaptive_threshold.calculate_cox_model_for_thresholds(feature)
 dict_thresholds = adaptive_threshold.dict_thresholds
 print('Results of Cox model for', feature, ':')
-print(dict_thresholds[feature].head())
+#print(dict_thresholds[feature].head())
 
+validate_samples = adaptive_threshold.drop_invalidate_samples(dict_thresholds[feature])
+print(validate_samples)
 
+X_train, X_test, y_train, y_test = adaptive_threshold.split_samples(expgroup_tumoral, 2)
+print(X_train, X_test, y_train, y_test)
+
+X_train
 
 
 

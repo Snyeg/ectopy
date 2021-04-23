@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 from lifelines import CoxPHFitter
+from sklearn.model_selection import StratifiedKFold
+
 
 
 # === Thresholds ===
@@ -273,3 +275,26 @@ class AdaptiveThreshold(Threshold):
         adaptive_threshold = pd.Series(index=self.data.columns, dtype=float)
         return adaptive_threshold
         
+    def drop_invalidate_samples(self, gene_data):
+        for index, row in gene_data.iterrows():
+            if row.validated == False:
+                gene_data = gene_data.drop(index)
+        return gene_data
+
+    def get_X_y(self, expgroup_tumoral):
+        X = expgroup_tumoral
+        y = expgroup_tumoral['time']
+        m = expgroup_tumoral['time'].median()
+        y[y < m] = 0
+        y[y >= m] = 1
+        return X,y
+
+    def split_samples(self, expgroup_tumoral, nb_splits):
+        X, y = self.get_X_y(expgroup_tumoral)
+        
+        kf = StratifiedKFold(n_splits=nb_splits)
+        
+        for train_index, test_index in kf.split(X,y):
+             X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+             y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+        return X_train, X_test, y_train, y_test
