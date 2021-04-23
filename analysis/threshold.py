@@ -139,12 +139,15 @@ class AdaptiveThreshold(Threshold):
     _step_percentile: float
     _min_nb_samples: int
     _min_reference_threshold: pd.Series
+    _nb_folds: int
+    _nb_cross_validations: int
     
     _min_threshold: pd.Series
     _max_threshold: pd.Series
     
     _eligible_features: list
     _dict_thresholds: dict # {'gene' : pd.DataFrame('thresholds', 'threshold_percentiles')} 
+    _cross_validations: list # list of dict('train', 'test')
     
     def __init__(
             self, 
@@ -156,7 +159,9 @@ class AdaptiveThreshold(Threshold):
             percentile: float = 15.0, 
             step_percentile: float = 1.0, 
             min_nb_samples: int = 20, 
-            min_reference_threshold: pd.Series = None
+            min_reference_threshold: pd.Series = None,
+            nb_folds: int = 3,
+            nb_cross_validations: int = 3
             ):
         
         super().__init__(data)
@@ -168,12 +173,18 @@ class AdaptiveThreshold(Threshold):
         self._step_percentile = step_percentile
         self._min_nb_samples = min_nb_samples
         self._min_reference_threshold = min_reference_threshold
+        self._nb_folds = nb_folds
+        self._nb_cross_validations = nb_cross_validations
         
+        self._cross_validations = list() 
         self._dict_thresholds = dict()
         self.calulate_min_threshold()
         self.calulate_max_threshold()
         self.define_eligible_features()
-        
+    
+    @property
+    def survival_data(self) -> pd.DataFrame:
+        return self._survival_data
         
     @property
     def min_threshold(self) -> pd.Series:
@@ -190,6 +201,10 @@ class AdaptiveThreshold(Threshold):
     @property
     def dict_thresholds(self) -> dict:
         return self._dict_thresholds
+    
+    @property
+    def cross_validations(self) -> list:
+        return self._cross_validations
         
     def calulate_min_threshold(self):
         list_thresholds = []
@@ -225,76 +240,91 @@ class AdaptiveThreshold(Threshold):
             self._dict_thresholds[feature]['threshold'] = thresholds
             self._dict_thresholds[feature]['threshold_percentile'] = threshold_percentiles
     
-    def is_threshold_validated(self, pvalue: float, hazard_ratio: float):
+    def _is_threshold_validated(self, pvalue: float, hazard_ratio: float):
         validated = False
         if (pvalue<0.05 and hazard_ratio>1.0):
             validated = True
         return validated
     
-    def generate_cox_expression(self, feature) -> pd.DataFrame:
-        cox = pd.DataFrame()
-        cox['feature'] = self.data[feature]
+    def _generate_cox_expression(self, feature, data: pd.DataFrame) -> pd.DataFrame:
+        cox = pd.DataFrame(index=data.index)
+        cox['feature'] = data[feature]
         cox['time'] = self._survival_data.loc[cox.index, self._duration_col]
         cox['event'] = self._survival_data.loc[cox.index, self._event_col]
         return cox[['feature', 'time', 'event']]
     
-    def generate_cox_group(self, feature, current_threshold):
-        cox = self.generate_cox_expression(feature)
+    def _generate_cox_group(self, feature, current_threshold, data: pd.DataFrame) -> pd.DataFrame:
+        cox = self._generate_cox_expression(feature, data)
         cox['group'] = 0
         cox.loc[cox['feature']>current_threshold, 'group'] = 1
         return cox[['group', 'time', 'event']]
     
-    def calculate_cox_model_for_expression(self, feature):
-        cox_expression = self.generate_cox_expression(feature)
+    def _calculate_cox_model_for_expression(self, feature, data: pd.DataFrame):
+        cox_expression = self._generate_cox_expression(feature, data)
         cph = CoxPHFitter()
         cph.fit(cox_expression, duration_col='time', event_col='event', show_progress=False)
         cox_pvalue_expression = cph.summary.p['feature']
         cox_hr_expression = cph.summary['exp(coef)']['feature']
-        cox_expression_validated = self.is_threshold_validated(cox_pvalue_expression, cox_hr_expression)
+        return cox_pvalue_expression, cox_hr_expression
     
-    def calculate_cox_model_for_thresholds(self, feature):
+    def _calculate_cox_model_for_threshold(self, feature, current_threshold, data: pd.DataFrame):
+        cox_group = self._generate_cox_group(feature, current_threshold, data)
+        cph = CoxPHFitter()
+        cph.fit(cox_group, duration_col='time', event_col='event', show_progress=False)
+        cox_pvalue_group = cph.summary.p['group']
+        cox_hr_group = cph.summary['exp(coef)']['group']
+        return cox_pvalue_group, cox_hr_group
+     
+    def append_threshold_status(self, feature):
         pvalues = []
         hrs = []
         validated = []
         for current_threshold in self.dict_thresholds[feature]['threshold']:
-            cox_group = self.generate_cox_group(feature, current_threshold)
-            cph = CoxPHFitter()
-            cph.fit(cox_group, duration_col='time', event_col='event', show_progress=False)
-            cox_pvalue_group = cph.summary.p['group']
+            cox_pvalue_group, cox_hr_group = self._calculate_cox_model_for_threshold(feature, current_threshold, self.data)
             pvalues.append(cox_pvalue_group)
-            cox_hr_group = cph.summary['exp(coef)']['group']
             hrs.append(cox_hr_group)
-            cox_group_validated = self.is_threshold_validated(cox_pvalue_group, cox_hr_group)
+            cox_group_validated = self._is_threshold_validated(cox_pvalue_group, cox_hr_group)
             validated.append(cox_group_validated)
         self._dict_thresholds[feature]['p_value'] = pvalues
         self._dict_thresholds[feature]['hazard_ratio'] = hrs
-        self._dict_thresholds[feature]['validated'] = validated
-            
+        self._dict_thresholds[feature]['validated'] = validated    
+        
+    def get_candidate_thresholds(self, feature) -> pd.DataFrame:
+        threshold_data = self._dict_thresholds[feature]
+        return threshold_data[threshold_data['validated']==True]
     
+    def get_binarized_follow_up(self) -> pd.Series:
+        events_only = self._survival_data[self._survival_data[self._event_col]>0]
+        median_follow_up = events_only[self._duration_col].median()
+        over_median = self._survival_data[self._duration_col]>median_follow_up
+        bin_follow_up = pd.Series(index=self._survival_data.index, dtype=float)
+        bin_follow_up[(~over_median)] = 0.0
+        bin_follow_up[over_median] = 1.0
+        return bin_follow_up
+    
+    
+    def generate_cross_validations(self):
+        self._cross_validations.clear()
+        bin_follow_up = self.get_binarized_follow_up()
+        for i in range(self._nb_cross_validations):
+            kf = StratifiedKFold(n_splits=self._nb_folds, shuffle=True)
+            for train_index, test_index in kf.split(self.data, bin_follow_up):
+                test_samples = list(self.data.iloc[test_index].index)
+                train_samples = list(self.data.iloc[train_index].index)
+                dict_train_test = dict()
+                dict_train_test['train'] = train_samples
+                dict_train_test['nb_train'] = len(train_samples)
+                dict_train_test['test'] = test_samples
+                dict_train_test['nb_test'] = len(test_samples)
+                self._cross_validations.append(dict_train_test)
+     
+       
     def calculate_threshold(self) -> pd.Series:
-        adaptive_threshold = pd.Series(index=self.data.columns, dtype=float)
-        return adaptive_threshold
+        self.generate_thresholds()
+        self.generate_cross_validations()
         
-    def drop_invalidate_samples(self, gene_data):
-        for index, row in gene_data.iterrows():
-            if row.validated == False:
-                gene_data = gene_data.drop(index)
-        return gene_data
-
-    def get_X_y(self, expgroup_tumoral):
-        X = expgroup_tumoral
-        y = expgroup_tumoral['time']
-        m = expgroup_tumoral['time'].median()
-        y[y < m] = 0
-        y[y >= m] = 1
-        return X,y
-
-    def split_samples(self, expgroup_tumoral, nb_splits):
-        X, y = self.get_X_y(expgroup_tumoral)
+        for feature in self._eligible_features:
+            self.append_threshold_status(feature)
         
-        kf = StratifiedKFold(n_splits=nb_splits)
-        
-        for train_index, test_index in kf.split(X,y):
-             X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-             y_train, y_test = y.iloc[train_index], y.iloc[test_index]
-        return X_train, X_test, y_train, y_test
+        adaptive = pd.Series(index=self.data.columns, dtype=float)
+        return adaptive

@@ -1,7 +1,5 @@
 from analysis import threshold
 import pandas as pd
-from lifelines import CoxPHFitter
-from sklearn.model_selection import StratifiedKFold
 
 data_dir = '../data/'
 
@@ -26,24 +24,40 @@ noise = 0.3
 
 max_normal = threshold.MaxTreshold(normal).calculate_threshold()
 
-options = {'percentile': percentile, 'step_percentile': step_percentile, 'min_nb_samples': nb_samples, 'noise_level': noise, 'min_reference_threshold': max_normal}
+options = {
+    'percentile': percentile,
+    'step_percentile': step_percentile,
+    'min_nb_samples': nb_samples,
+    'noise_level': noise,
+    'min_reference_threshold': max_normal,
+    'nb_folds': 3,
+    'nb_cross_validations': 1
+    }
+
+
 adaptive_threshold = threshold.AdaptiveThreshold(data=tumoral, survival_data=expgroup_tumoral, duration_col='time', event_col='event', **options)
 adaptive_threshold.generate_thresholds()
+adaptive_threshold.generate_cross_validations()
+
+
+cv = adaptive_threshold.cross_validations
+for i in range(len(cv)):
+    cv_iteration = cv[i]
+    print(i, 'Test dataset n =', cv_iteration['nb_test'], cv_iteration['test'])
+
 
 feature = 'EXO1'
 print('\nProcessing feature', feature, ' please wait...')
-adaptive_threshold.calculate_cox_model_for_thresholds(feature)
+adaptive_threshold.append_threshold_status(feature)
 dict_thresholds = adaptive_threshold.dict_thresholds
-print('Results of Cox model for', feature, ':')
-#print(dict_thresholds[feature].head())
+print('\nResults of Cox model for', feature, ':')
+print('Number of total thresholds', dict_thresholds[feature].shape[0])
+print(dict_thresholds[feature].head())
 
-validate_samples = adaptive_threshold.drop_invalidate_samples(dict_thresholds[feature])
-print(validate_samples)
-
-X_train, X_test, y_train, y_test = adaptive_threshold.split_samples(expgroup_tumoral, 2)
-print(X_train, X_test, y_train, y_test)
-
-X_train
+candidate_thresholds = adaptive_threshold.get_candidate_thresholds(feature)
+print('\nCadidate thresholds', feature, ':')
+print('Number of candidate thresholds', candidate_thresholds.shape[0])
+print(candidate_thresholds.head())
 
 
 
