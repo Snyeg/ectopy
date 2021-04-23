@@ -239,6 +239,7 @@ class AdaptiveThreshold(Threshold):
             self._dict_thresholds[feature] = pd.DataFrame()
             self._dict_thresholds[feature]['threshold'] = thresholds
             self._dict_thresholds[feature]['threshold_percentile'] = threshold_percentiles
+            self._dict_thresholds[feature].index = ['T' + str(i+1) for i in range(len(thresholds))]
     
     def _is_threshold_validated(self, pvalue: float, hazard_ratio: float):
         validated = False
@@ -275,7 +276,7 @@ class AdaptiveThreshold(Threshold):
         cox_hr_group = cph.summary['exp(coef)']['group']
         return cox_pvalue_group, cox_hr_group
      
-    def append_threshold_status(self, feature):
+    def calculate_threshold_status(self, feature):
         pvalues = []
         hrs = []
         validated = []
@@ -287,7 +288,8 @@ class AdaptiveThreshold(Threshold):
             validated.append(cox_group_validated)
         self._dict_thresholds[feature]['p_value'] = pvalues
         self._dict_thresholds[feature]['hazard_ratio'] = hrs
-        self._dict_thresholds[feature]['validated'] = validated    
+        self._dict_thresholds[feature]['validated'] = validated  
+        self._dict_thresholds[feature]['cv_score'] = np.nan  
         
     def get_candidate_thresholds(self, feature) -> pd.DataFrame:
         threshold_data = self._dict_thresholds[feature]
@@ -302,12 +304,11 @@ class AdaptiveThreshold(Threshold):
         bin_follow_up[over_median] = 1.0
         return bin_follow_up
     
-    
     def generate_cross_validations(self):
         self._cross_validations.clear()
         bin_follow_up = self.get_binarized_follow_up()
         for i in range(self._nb_cross_validations):
-            kf = StratifiedKFold(n_splits=self._nb_folds, shuffle=True)
+            kf = StratifiedKFold(n_splits=self._nb_folds, shuffle=True, random_state=i)
             for train_index, test_index in kf.split(self.data, bin_follow_up):
                 test_samples = list(self.data.iloc[test_index].index)
                 train_samples = list(self.data.iloc[train_index].index)
@@ -317,8 +318,28 @@ class AdaptiveThreshold(Threshold):
                 dict_train_test['test'] = test_samples
                 dict_train_test['nb_test'] = len(test_samples)
                 self._cross_validations.append(dict_train_test)
+    
+    def calculate_cross_validation_score(self, feature):
+        candidate_thresholds = self.get_candidate_thresholds(feature)
+        for ind_threshold in candidate_thresholds.index:
+            candidate_threshold_percentile = candidate_thresholds.loc[ind_threshold, 'threshold_percentile']
+            nb_cv_validated = 0
+            for ind_cv in range(len(self.cross_validations)):
+                is_cv_validated = True
+                dict_cross_validation_samples = self.cross_validations[ind_cv]
+                for dataset in ['train', 'test']:
+                    samples = dict_cross_validation_samples[dataset]
+                    dataset_data = self.data.loc[samples]
+                    candidate_threshold = dataset_data[feature].quantile(candidate_threshold_percentile / 100.0)
+                    cox_pvalue_group, cox_hr_group = self._calculate_cox_model_for_threshold(feature, candidate_threshold, dataset_data)
+                    cox_group_validated = self._is_threshold_validated(cox_pvalue_group, cox_hr_group)
+                    is_cv_validated = is_cv_validated and cox_group_validated
+                if (is_cv_validated):
+                    nb_cv_validated = nb_cv_validated + 1
+            cv_score = 100.0 * nb_cv_validated / len(self.cross_validations)
+            self._dict_thresholds[feature].loc[ind_threshold, 'cv_score'] = cv_score   
+ 
      
-       
     def calculate_threshold(self) -> pd.Series:
         self.generate_thresholds()
         self.generate_cross_validations()

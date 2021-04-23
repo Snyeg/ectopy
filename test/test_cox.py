@@ -46,19 +46,17 @@ for i in range(len(cv)):
     print(i, 'Test dataset n =', cv_iteration['nb_test'], cv_iteration['test'])
 
 
-feature = 'EXO1'
+feature = 'DNMT3B'
 print('\nProcessing feature', feature, ' please wait...')
-adaptive_threshold.append_threshold_status(feature)
+adaptive_threshold.calculate_threshold_status(feature)
 dict_thresholds = adaptive_threshold.dict_thresholds
 print('\nResults of Cox model for', feature, ':')
 print('Number of total thresholds', dict_thresholds[feature].shape[0])
 print(dict_thresholds[feature].head())
 
-candidate_thresholds = adaptive_threshold.get_candidate_thresholds(feature)
-print('\nCadidate thresholds', feature, ':')
-print('Number of candidate thresholds', candidate_thresholds.shape[0])
-print(candidate_thresholds.head())
 
-
-
-
+print('\nCross-validations for', feature, '... Please wait...')
+adaptive_threshold.calculate_cross_validation_score(feature)
+print(dict_thresholds[feature])
+    
+    
