@@ -46,7 +46,7 @@ for i in range(len(cv)):
     print(i, 'Test dataset n =', cv_iteration['nb_test'], cv_iteration['test'])
 
 
-feature = 'DNMT3B'
+feature = 'EXO1'
 print('\nProcessing feature', feature, ' please wait...')
 adaptive_threshold.calculate_threshold_status(feature)
 dict_thresholds = adaptive_threshold.dict_thresholds
@@ -58,5 +58,12 @@ print(dict_thresholds[feature].head())
 print('\nCross-validations for', feature, '... Please wait...')
 adaptive_threshold.calculate_cross_validation_score(feature)
 print(dict_thresholds[feature])
-    
+percentile = adaptive_threshold.get_percentile_definitive_threshold(feature)
+print(percentile)
+
+print(adaptive_threshold.get_definitive_threshold(feature))
+
+
+
+   
     

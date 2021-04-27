@@ -338,8 +338,22 @@ class AdaptiveThreshold(Threshold):
                     nb_cv_validated = nb_cv_validated + 1
             cv_score = 100.0 * nb_cv_validated / len(self.cross_validations)
             self._dict_thresholds[feature].loc[ind_threshold, 'cv_score'] = cv_score   
- 
-     
+    
+    def get_maximum_percentile_from_cv_score(self, cv_scores):
+        data_count_value = cv_scores.value_counts()
+        data_max =data_count_value.index.max()
+        return cv_scores[cv_scores == data_max].index
+    
+    def get_percentile_definitive_threshold(self, feature):
+        cv_scores = self._dict_thresholds[feature].cv_score
+        index_cv_score_max = self.get_maximum_percentile_from_cv_score(cv_scores)
+        return self._dict_thresholds[feature].loc[index_cv_score_max,'threshold_percentile'].max()
+    
+    def get_definitive_threshold(self, feature):
+        percentile = self.get_percentile_definitive_threshold(feature)
+        return self._dict_thresholds[feature][self._dict_thresholds[feature].threshold_percentile == percentile].threshold
+
+    
     def calculate_threshold(self) -> pd.Series:
         self.generate_thresholds()
         self.generate_cross_validations()
@@ -349,3 +363,4 @@ class AdaptiveThreshold(Threshold):
         
         adaptive = pd.Series(index=self.data.columns, dtype=float)
         return adaptive
+    
