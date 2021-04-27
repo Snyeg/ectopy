@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from lifelines import CoxPHFitter
-from sklearn.model_selection import StratifiedKFold
+from analysis import cross_validation
 
 # === Thresholds ===
 
@@ -137,13 +137,15 @@ class AdaptiveThreshold(Threshold):
     _min_reference_threshold: pd.Series
     _nb_folds: int
     _nb_cross_validations: int
+    _cv_type: str
     
     _min_threshold: pd.Series
     _max_threshold: pd.Series
     
     _eligible_features: list
     _dict_thresholds: dict # {'gene' : pd.DataFrame('thresholds', 'threshold_percentiles')} 
-    _cross_validations: list # list of dict('train', 'test')
+    _cv_strategy: cross_validation.CrossValidationStrategy
+
     
     def __init__(
             self, 
@@ -157,7 +159,8 @@ class AdaptiveThreshold(Threshold):
             min_nb_samples: int = 20, 
             min_reference_threshold: pd.Series = None,
             nb_folds: int = 3,
-            nb_cross_validations: int = 1
+            nb_cross_validations: int = 1,
+            cv_type: str = 'stratified_k_fold'
             ):
         
         super().__init__(data)
@@ -171,12 +174,15 @@ class AdaptiveThreshold(Threshold):
         self._min_reference_threshold = min_reference_threshold
         self._nb_folds = nb_folds
         self._nb_cross_validations = nb_cross_validations
-        
-        self._cross_validations = list() 
+        self._cv_type = cv_type
+    
         self._dict_thresholds = dict()
         self._calulate_min_threshold()
         self._calulate_max_threshold()
         self._define_eligible_features()
+        
+        self._init_cv_strategy()
+        
     
     @property
     def survival_data(self) -> pd.DataFrame:
@@ -200,13 +206,26 @@ class AdaptiveThreshold(Threshold):
     
     @property
     def cross_validations(self) -> list:
-        return self._cross_validations
-    
-    
+        return self._cv_strategy.cross_validations
     
     def get_details(self, feature) -> pd.DataFrame:
         return self._dict_thresholds[feature]
         
+    
+    def _init_cv_strategy(self):
+        cv_options = {
+            'data': self._data, 
+            'nb_folds': self._nb_folds,
+            'nb_cross_validations': self._nb_cross_validations
+            }
+        
+        if (self._cv_type=='stratified_k_fold'):
+            bin_follow_up = self._get_binarized_follow_up()
+            self._cv_strategy = cross_validation.StratifiedKFoldStrategy(**cv_options, targets=bin_follow_up)
+        else:
+            self._cv_strategy = cross_validation.KFoldStrategy(**cv_options)
+        self._cv_strategy.generate_cross_validations()
+   
         
     def _calulate_min_threshold(self):
         list_thresholds = []
@@ -307,21 +326,7 @@ class AdaptiveThreshold(Threshold):
         bin_follow_up[over_median] = 1.0
         return bin_follow_up
     
-    def _generate_cross_validations(self):
-        self._cross_validations.clear()
-        bin_follow_up = self._get_binarized_follow_up()
-        for i in range(self._nb_cross_validations):
-            kf = StratifiedKFold(n_splits=self._nb_folds, shuffle=True, random_state=i)
-            for train_index, test_index in kf.split(self.data, bin_follow_up):
-                test_samples = list(self.data.iloc[test_index].index)
-                train_samples = list(self.data.iloc[train_index].index)
-                dict_train_test = dict()
-                dict_train_test['train'] = train_samples
-                dict_train_test['nb_train'] = len(train_samples)
-                dict_train_test['test'] = test_samples
-                dict_train_test['nb_test'] = len(test_samples)
-                self._cross_validations.append(dict_train_test)
-    
+     
     def _calculate_cross_validation_score(self, feature):
         candidate_thresholds = self._get_candidate_thresholds(feature)
         for ind_threshold in candidate_thresholds.index:
@@ -350,7 +355,6 @@ class AdaptiveThreshold(Threshold):
     def calculate_threshold(self) -> pd.Series:
         adaptive = pd.Series(index=self.data.columns, dtype=float)
         self._generate_thresholds()
-        self._generate_cross_validations()
         for feature in self._eligible_features:
             print('Processing feature', feature)
             self._calculate_threshold_status(feature)

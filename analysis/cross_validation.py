@@ -28,6 +28,10 @@ class CrossValidationStrategy():
         return self._nb_folds 
     
     @property
+    def nb_cross_validations(self) -> int:
+        return self._nb_cross_validations
+    
+    @property
     def cross_validations(self) -> list:
         return self._cross_validations
     
@@ -42,7 +46,8 @@ class CrossValidationStrategy():
     def generate_cross_validations(self):
         pass
 
-
+    def __str__(self):
+        return 'Abstract CrossValidationStrategy'
 
 
 
@@ -56,7 +61,8 @@ class KFoldStrategy(CrossValidationStrategy):
             self._cross_validations.append(dict_train_test)
 
 
- 
+    def __str__(self):
+        return 'KFoldStrategy'
  
             
 class StratifiedKFoldStrategy(CrossValidationStrategy):
@@ -80,3 +86,6 @@ class StratifiedKFoldStrategy(CrossValidationStrategy):
         for train_index, test_index in cv.split(self._data, self._targets):
             dict_train_test = self._generate_train_test(train_index, test_index)
             self._cross_validations.append(dict_train_test)
+            
+    def __str__(self):
+        return 'StratifiedKFoldStrategy'
