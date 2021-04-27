@@ -178,9 +178,9 @@ class AdaptiveThreshold(Threshold):
         
         self._cross_validations = list() 
         self._dict_thresholds = dict()
-        self.calulate_min_threshold()
-        self.calulate_max_threshold()
-        self.define_eligible_features()
+        self._calulate_min_threshold()
+        self._calulate_max_threshold()
+        self._define_eligible_features()
     
     @property
     def survival_data(self) -> pd.DataFrame:
@@ -205,8 +205,14 @@ class AdaptiveThreshold(Threshold):
     @property
     def cross_validations(self) -> list:
         return self._cross_validations
+    
+    
+    
+    def get_details(self, feature) -> pd.DataFrame:
+        return self._dict_thresholds[feature]
         
-    def calulate_min_threshold(self):
+        
+    def _calulate_min_threshold(self):
         list_thresholds = []
         if self._percentile is not None:
             list_thresholds.append(PercentileThreshold(self.data, self._percentile).calculate_threshold())
@@ -218,7 +224,7 @@ class AdaptiveThreshold(Threshold):
             list_thresholds.append(self._min_reference_threshold)
         self._min_threshold = pd.concat(list_thresholds, axis=1).max(axis=1)
 
-    def calulate_max_threshold(self):
+    def _calulate_max_threshold(self):
         list_thresholds = []
         if self._percentile is not None:
             list_thresholds.append(PercentileThreshold(self.data, 100.0-self._percentile).calculate_threshold())
@@ -226,11 +232,11 @@ class AdaptiveThreshold(Threshold):
             list_thresholds.append(NSampleThreshold(self.data, self._min_nb_samples).calculate_threshold(ascending=False))
         self._max_threshold = pd.concat(list_thresholds, axis=1).min(axis=1)
         
-    def define_eligible_features(self):
+    def _define_eligible_features(self):
         eligible_features = self._max_threshold>=self._min_threshold
         self._eligible_features = list(eligible_features[eligible_features].index)
     
-    def generate_thresholds(self): 
+    def _generate_thresholds(self): 
         for feature in self._eligible_features:
             min_percentile = self.get_threshold_percentile(self.data[feature], self.min_threshold[feature])
             max_percentile = self.get_threshold_percentile(self.data[feature], self.max_threshold[feature])
@@ -276,7 +282,7 @@ class AdaptiveThreshold(Threshold):
         cox_hr_group = cph.summary['exp(coef)']['group']
         return cox_pvalue_group, cox_hr_group
      
-    def calculate_threshold_status(self, feature):
+    def _calculate_threshold_status(self, feature):
         pvalues = []
         hrs = []
         validated = []
@@ -289,13 +295,14 @@ class AdaptiveThreshold(Threshold):
         self._dict_thresholds[feature]['p_value'] = pvalues
         self._dict_thresholds[feature]['hazard_ratio'] = hrs
         self._dict_thresholds[feature]['validated'] = validated  
-        self._dict_thresholds[feature]['cv_score'] = np.nan  
+        self._dict_thresholds[feature]['cv_score'] = np.nan
+        self._dict_thresholds[feature]['optimal'] = False    
         
-    def get_candidate_thresholds(self, feature) -> pd.DataFrame:
+    def _get_candidate_thresholds(self, feature) -> pd.DataFrame:
         threshold_data = self._dict_thresholds[feature]
         return threshold_data[threshold_data['validated']==True]
     
-    def get_binarized_follow_up(self) -> pd.Series:
+    def _get_binarized_follow_up(self) -> pd.Series:
         events_only = self._survival_data[self._survival_data[self._event_col]>0]
         median_follow_up = events_only[self._duration_col].median()
         over_median = self._survival_data[self._duration_col]>median_follow_up
@@ -304,9 +311,9 @@ class AdaptiveThreshold(Threshold):
         bin_follow_up[over_median] = 1.0
         return bin_follow_up
     
-    def generate_cross_validations(self):
+    def _generate_cross_validations(self):
         self._cross_validations.clear()
-        bin_follow_up = self.get_binarized_follow_up()
+        bin_follow_up = self._get_binarized_follow_up()
         for i in range(self._nb_cross_validations):
             kf = StratifiedKFold(n_splits=self._nb_folds, shuffle=True, random_state=i)
             for train_index, test_index in kf.split(self.data, bin_follow_up):
@@ -319,8 +326,8 @@ class AdaptiveThreshold(Threshold):
                 dict_train_test['nb_test'] = len(test_samples)
                 self._cross_validations.append(dict_train_test)
     
-    def calculate_cross_validation_score(self, feature):
-        candidate_thresholds = self.get_candidate_thresholds(feature)
+    def _calculate_cross_validation_score(self, feature):
+        candidate_thresholds = self._get_candidate_thresholds(feature)
         for ind_threshold in candidate_thresholds.index:
             candidate_threshold_percentile = candidate_thresholds.loc[ind_threshold, 'threshold_percentile']
             nb_cv_validated = 0
@@ -338,29 +345,22 @@ class AdaptiveThreshold(Threshold):
                     nb_cv_validated = nb_cv_validated + 1
             cv_score = 100.0 * nb_cv_validated / len(self.cross_validations)
             self._dict_thresholds[feature].loc[ind_threshold, 'cv_score'] = cv_score   
-    
-    def get_maximum_percentile_from_cv_score(self, cv_scores):
-        data_count_value = cv_scores.value_counts()
-        data_max =data_count_value.index.max()
-        return cv_scores[cv_scores == data_max].index
-    
-    def get_percentile_definitive_threshold(self, feature):
-        cv_scores = self._dict_thresholds[feature].cv_score
-        index_cv_score_max = self.get_maximum_percentile_from_cv_score(cv_scores)
-        return self._dict_thresholds[feature].loc[index_cv_score_max,'threshold_percentile'].max()
-    
-    def get_definitive_threshold(self, feature):
-        percentile = self.get_percentile_definitive_threshold(feature)
-        return self._dict_thresholds[feature][self._dict_thresholds[feature].threshold_percentile == percentile].threshold
-
+   
+    def _get_optimal_threshold(self, feature):
+        optimal = self._dict_thresholds[feature].sort_values(by=['validated', 'cv_score', 'threshold_percentile', 'p_value'], ascending=[False, False, False, True]).head(1)
+        self._dict_thresholds[feature].loc[optimal.index, 'optimal'] = True
+        return optimal
     
     def calculate_threshold(self) -> pd.Series:
-        self.generate_thresholds()
-        self.generate_cross_validations()
-        
-        for feature in self._eligible_features:
-            self.append_threshold_status(feature)
-        
         adaptive = pd.Series(index=self.data.columns, dtype=float)
+        self._generate_thresholds()
+        self._generate_cross_validations()
+        for feature in self._eligible_features:
+            print('Processing feature', feature)
+            self._calculate_threshold_status(feature)
+            self._calculate_cross_validation_score(feature)
+            optimal_threshold = self._get_optimal_threshold(feature)
+            print('Optimal threshold for', feature)
+            print(optimal_threshold)
+            adaptive.loc[feature] =  optimal_threshold.iloc[0]['threshold']
         return adaptive
-    
