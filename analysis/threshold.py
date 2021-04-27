@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
-from lifelines import CoxPHFitter
-from analysis import cross_validation
+from analysis import cross_validation, survival
 
 # === Thresholds ===
 
@@ -145,6 +144,7 @@ class AdaptiveThreshold(Threshold):
     _eligible_features: list
     _dict_thresholds: dict # {'gene' : pd.DataFrame('thresholds', 'threshold_percentiles')} 
     _cv_strategy: cross_validation.CrossValidationStrategy
+    _survival_model: survival.SurvivalModel
 
     
     def __init__(
@@ -182,6 +182,7 @@ class AdaptiveThreshold(Threshold):
         self._define_eligible_features()
         
         self._init_cv_strategy()
+        self._init_survival_model()
         
     
     @property
@@ -212,8 +213,16 @@ class AdaptiveThreshold(Threshold):
         return self._dict_thresholds[feature]
         
     
+    def _init_survival_model(self):
+        options = {
+            'survival_data': self._survival_data, 
+            'duration_col': self._duration_col,
+            'event_col': self._event_col
+            }
+        self._survival_model = survival.Cox(**options)
+    
     def _init_cv_strategy(self):
-        cv_options = {
+        options = {
             'data': self._data, 
             'nb_folds': self._nb_folds,
             'nb_cross_validations': self._nb_cross_validations
@@ -221,9 +230,9 @@ class AdaptiveThreshold(Threshold):
         
         if (self._cv_type=='stratified_k_fold'):
             bin_follow_up = self._get_binarized_follow_up()
-            self._cv_strategy = cross_validation.StratifiedKFoldStrategy(**cv_options, targets=bin_follow_up)
+            self._cv_strategy = cross_validation.StratifiedKFoldStrategy(**options, targets=bin_follow_up)
         else:
-            self._cv_strategy = cross_validation.KFoldStrategy(**cv_options)
+            self._cv_strategy = cross_validation.KFoldStrategy(**options)
         self._cv_strategy.generate_cross_validations()
    
         
@@ -261,51 +270,16 @@ class AdaptiveThreshold(Threshold):
             self._dict_thresholds[feature]['threshold'] = thresholds
             self._dict_thresholds[feature]['threshold_percentile'] = threshold_percentiles
             self._dict_thresholds[feature].index = ['T' + str(i+1) for i in range(len(thresholds))]
-    
-    def _is_threshold_validated(self, pvalue: float, hazard_ratio: float):
-        validated = False
-        if (pvalue<0.05 and hazard_ratio>1.0):
-            validated = True
-        return validated
-    
-    def _generate_cox_expression(self, feature, data: pd.DataFrame) -> pd.DataFrame:
-        cox = pd.DataFrame(index=data.index)
-        cox['feature'] = data[feature]
-        cox['time'] = self._survival_data.loc[cox.index, self._duration_col]
-        cox['event'] = self._survival_data.loc[cox.index, self._event_col]
-        return cox[['feature', 'time', 'event']]
-    
-    def _generate_cox_group(self, feature, current_threshold, data: pd.DataFrame) -> pd.DataFrame:
-        cox = self._generate_cox_expression(feature, data)
-        cox['group'] = 0
-        cox.loc[cox['feature']>current_threshold, 'group'] = 1
-        return cox[['group', 'time', 'event']]
-    
-    def _calculate_cox_model_for_expression(self, feature, data: pd.DataFrame):
-        cox_expression = self._generate_cox_expression(feature, data)
-        cph = CoxPHFitter()
-        cph.fit(cox_expression, duration_col='time', event_col='event', show_progress=False)
-        cox_pvalue_expression = cph.summary.p['feature']
-        cox_hr_expression = cph.summary['exp(coef)']['feature']
-        return cox_pvalue_expression, cox_hr_expression
-    
-    def _calculate_cox_model_for_threshold(self, feature, current_threshold, data: pd.DataFrame):
-        cox_group = self._generate_cox_group(feature, current_threshold, data)
-        cph = CoxPHFitter()
-        cph.fit(cox_group, duration_col='time', event_col='event', show_progress=False)
-        cox_pvalue_group = cph.summary.p['group']
-        cox_hr_group = cph.summary['exp(coef)']['group']
-        return cox_pvalue_group, cox_hr_group
      
     def _calculate_threshold_status(self, feature):
         pvalues = []
         hrs = []
         validated = []
         for current_threshold in self.dict_thresholds[feature]['threshold']:
-            cox_pvalue_group, cox_hr_group = self._calculate_cox_model_for_threshold(feature, current_threshold, self.data)
-            pvalues.append(cox_pvalue_group)
-            hrs.append(cox_hr_group)
-            cox_group_validated = self._is_threshold_validated(cox_pvalue_group, cox_hr_group)
+            model_output = self._survival_model.calculate_model_for_threshold(feature, current_threshold, self.data)
+            pvalues.append(model_output[0])
+            hrs.append(model_output[1])
+            cox_group_validated = self._survival_model.is_significant(model_output)
             validated.append(cox_group_validated)
         self._dict_thresholds[feature]['p_value'] = pvalues
         self._dict_thresholds[feature]['hazard_ratio'] = hrs
@@ -339,8 +313,8 @@ class AdaptiveThreshold(Threshold):
                     samples = dict_cross_validation_samples[dataset]
                     dataset_data = self.data.loc[samples]
                     candidate_threshold = dataset_data[feature].quantile(candidate_threshold_percentile / 100.0)
-                    cox_pvalue_group, cox_hr_group = self._calculate_cox_model_for_threshold(feature, candidate_threshold, dataset_data)
-                    cox_group_validated = self._is_threshold_validated(cox_pvalue_group, cox_hr_group)
+                    model_output = self._survival_model.calculate_model_for_threshold(feature, candidate_threshold, dataset_data)
+                    cox_group_validated = self._survival_model.is_significant(model_output)
                     is_cv_validated = is_cv_validated and cox_group_validated
                 if (is_cv_validated):
                     nb_cv_validated = nb_cv_validated + 1
@@ -350,6 +324,7 @@ class AdaptiveThreshold(Threshold):
     def _get_optimal_threshold(self, feature):
         optimal = self._dict_thresholds[feature].sort_values(by=['validated', 'cv_score', 'threshold_percentile', 'p_value'], ascending=[False, False, False, True]).head(1)
         self._dict_thresholds[feature].loc[optimal.index, 'optimal'] = True
+        optimal.loc[:, 'optimal'] = True
         return optimal
     
     def calculate_threshold(self) -> pd.Series:

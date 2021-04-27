@@ -1,6 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import RepeatedKFold, RepeatedStratifiedKFold
 
+
 class CrossValidationStrategy():
     """Abstract CrosssValidationStrategy"""
     

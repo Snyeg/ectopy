@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from lifelines import CoxPHFitter
 from lifelines.statistics import multivariate_logrank_test
 
@@ -50,11 +51,20 @@ class SurvivalModel:
         cox_hr_expression = self._cph.summary['exp(coef)']['feature']
         return (cox_pvalue_expression, cox_hr_expression)
     
+    def calculate_model_for_threshold(self, feature, threshold, data: pd.DataFrame) -> tuple:
+        return (np.nan, np.nan)
+    
     def is_significant(self, model_output) -> bool:
-        validated = False
-        if (model_output[0]<0.05 and model_output[1]>1.0):
-            validated = True
-        return validated
+        pvalue_max = 0.05
+        hr_min = 1.0
+        if model_output is None:
+            return False
+        if len(model_output)<1:
+            return False
+        if len(model_output)<2:
+            return (model_output[0]<=pvalue_max)
+        if len(model_output)<3:
+            return (model_output[0]<=pvalue_max and model_output[1]>=hr_min)
 
 
 class Cox(SurvivalModel):
