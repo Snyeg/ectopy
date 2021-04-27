@@ -3,8 +3,6 @@ import numpy as np
 from lifelines import CoxPHFitter
 from sklearn.model_selection import StratifiedKFold
 
-
-
 # === Thresholds ===
 
 class Threshold:
@@ -122,9 +120,7 @@ class StdDecorator(ThresholdDecorator):
     
     def calculate_threshold(self) -> pd.Series:
         return self.threshold.calculate_threshold() + self.nb_std * self.threshold.data.std()
-
-
-
+    
 
 # === Adaptive threshold ===
 
@@ -161,7 +157,7 @@ class AdaptiveThreshold(Threshold):
             min_nb_samples: int = 20, 
             min_reference_threshold: pd.Series = None,
             nb_folds: int = 3,
-            nb_cross_validations: int = 3
+            nb_cross_validations: int = 1
             ):
         
         super().__init__(data)
@@ -195,7 +191,7 @@ class AdaptiveThreshold(Threshold):
         return self._max_threshold
     
     @property
-    def eligible_features(self) -> dict:
+    def eligible_features(self) -> list:
         return self._eligible_features
     
     @property
