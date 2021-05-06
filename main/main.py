@@ -20,7 +20,7 @@ print('\nConsistency check')
 print(consistency)
 
 m2sd_threshold = threshold.StdDecorator(threshold.MeanTreshold(normal), nb_std=2).calculate_threshold()
-print(m2sd_threshold)
+print(list(m2sd_threshold))
 
 
 frequency = expression_analysis.ExpressionFrequency().calculate_expression_frequency(tumoral, m2sd_threshold)

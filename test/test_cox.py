@@ -8,12 +8,13 @@ data = pd.read_csv(data_dir + 'data.csv', sep=';', index_col='id_sample')
 
 print('Data', data.shape)
 print(data.head())
+print(expgroup.head())
+
 
 expgroup_normal = expgroup[expgroup['group']=='normal']
 expgroup_tumoral = expgroup[expgroup['group']=='tumoral']
 normal = data.loc[expgroup_normal.index, :]
 tumoral = data.loc[expgroup_tumoral.index, :]
-
 
 # Adaptive threshold
 
@@ -32,6 +33,6 @@ options = {
 
 adaptive_threshold = threshold.AdaptiveThreshold(data=tumoral, survival_data=expgroup_tumoral, duration_col='time', event_col='event', **options)
 adaptive = adaptive_threshold.calculate_threshold()
-print(adaptive)
+print(list(adaptive))
 print(adaptive_threshold.get_details('EXO1').head(15))
     
