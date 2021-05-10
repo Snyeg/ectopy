@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?PowerDesigner AppLocale="UTF16" ID="{CEDB1792-C879-45AE-93E6-76E2EECE05A2}" Label="" LastModificationDate="1620579597" Name="Diagramme de séquence UML_3" Objects="18" Symbols="21" Target="Analyse" TargetLink="Reference" Type="{18112060-1A4B-11D1-83D9-444553540000}" signature="CLD_OBJECT_MODEL" version="15.1.0.2850"?>
+<?PowerDesigner AppLocale="UTF16" ID="{CEDB1792-C879-45AE-93E6-76E2EECE05A2}" Label="" LastModificationDate="1620664868" Name="Diagramme de séquence UML_3" Objects="18" Symbols="21" Target="Analyse" TargetLink="Reference" Type="{18112060-1A4B-11D1-83D9-444553540000}" signature="CLD_OBJECT_MODEL" version="15.1.0.2850"?>
 <!-- Veuillez ne pas modifier ce fichier -->
 
 <Model xmlns:a="attribute" xmlns:c="collection" xmlns:o="object">
@@ -1353,7 +1353,7 @@ Shadow=0</a:DisplayPreferences>
 <c:Symbols>
 <o:InteractionSymbol Id="o5">
 <a:ModificationDate>1620285120</a:ModificationDate>
-<a:Rect>((-24765,-29051), (33420,14432))</a:Rect>
+<a:Rect>((-24765,-29051), (33532,14432))</a:Rect>
 <a:AutoAdjustToText>0</a:AutoAdjustToText>
 <a:BaseSymbol.Flags>4</a:BaseSymbol.Flags>
 <a:LineColor>15257808</a:LineColor>
@@ -1650,7 +1650,7 @@ DISPNAME 0 Arial,8,U</a:FontList>
 <o:UMLObjectSequenceSymbol Id="o7">
 <a:CreationDate>1620220277</a:CreationDate>
 <a:ModificationDate>1620223757</a:ModificationDate>
-<a:Rect>((27171,8169), (31971,11768))</a:Rect>
+<a:Rect>((26610,8169), (32532,11768))</a:Rect>
 <a:LineColor>16744448</a:LineColor>
 <a:FillColor>16775660</a:FillColor>
 <a:ShadowColor>12632256</a:ShadowColor>
@@ -1747,12 +1747,12 @@ DISPNAME 0 Arial,8,U</a:FontList>
 </o:UMLObject>
 <o:UMLObject Id="o36">
 <a:ObjectID>774E33BA-EE59-45BE-B528-CEF4284FE931</a:ObjectID>
-<a:Name>:Cox</a:Name>
-<a:Code>:Cox</a:Code>
+<a:Name>:SurvivalModel</a:Name>
+<a:Code>:SurvivalModel</a:Code>
 <a:CreationDate>1620220277</a:CreationDate>
 <a:Creator>flina</a:Creator>
-<a:ModificationDate>1620223772</a:ModificationDate>
-<a:Modifier>flina</a:Modifier>
+<a:ModificationDate>1620664868</a:ModificationDate>
+<a:Modifier>Katia</a:Modifier>
 </o:UMLObject>
 </c:Model.Objects>
 <c:Messages>
@@ -1888,8 +1888,8 @@ DISPNAME 0 Arial,8,U</a:FontList>
 <a:Code>Analysis</a:Code>
 <a:CreationDate>1620203962</a:CreationDate>
 <a:Creator>flina</a:Creator>
-<a:ModificationDate>1620579597</a:ModificationDate>
-<a:Modifier>flina</a:Modifier>
+<a:ModificationDate>1620664857</a:ModificationDate>
+<a:Modifier>Katia</a:Modifier>
 <a:TargetModelURL>file:///%_OBJLANG%/analysis.xol</a:TargetModelURL>
 <a:TargetModelID>87317290-AF03-469F-BC1E-99593F18A4AB</a:TargetModelID>
 <a:TargetModelClassID>1811206C-1A4B-11D1-83D9-444553540000</a:TargetModelClassID>
